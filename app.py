@@ -84,11 +84,10 @@ else:
     user_list = ["관리자에게 문의하세요(secrets.toml 설정 필요)"]
 if "popover_key" not in st.session_state:
     st.session_state["popover_key"] = 0
-def on_name_selected():
-    st.session_state["popover_key"] += 1
+def on_name_selected(): pass 
 saved_name = st.session_state.get("selected_name_radio", None)
 btn_label = f"이름: {saved_name}" if saved_name else "출결 인원 선택 🔽"
-with st.popover(btn_label, key=f"user_select_{st.session_state['popover_key']}"):
+with st.popover(btn_label):
     name = st.radio(
         "이름 목록",
         user_list,
