@@ -23,6 +23,34 @@ def get_sheet():
     sheet_url = st.secrets["private_gsheets_url"]
     return client.open_by_url(sheet_url).sheet1
 
+
+if hasattr(st, "dialog"):
+    dlg = st.dialog
+else:
+    dlg = st.experimental_dialog
+
+@dlg("조퇴 확인")
+def show_early_leave_dialog(name, user_lat, user_lon, distance):
+    st.warning("⚠️ 현재 오후 6시 이전입니다. 조퇴하시겠습니까?")
+    col_y, col_n = st.columns(2)
+    with col_y:
+        if st.button("네 (조퇴)"):
+            try:
+                sheet = get_sheet()
+                kst = pytz.timezone('Asia/Seoul')
+                now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
+                sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
+                st.success(f"{name}님 {now} 조퇴 기록 완료!")
+                st.session_state['force_rerun'] = True # 메인 화면 갱신 유도
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e:
+                import traceback
+                st.code(traceback.format_exc())
+    with col_n:
+        if st.button("아니오"):
+            st.rerun()
+
 # --- UI 및 로직 ---
 st.set_page_config(page_title="출퇴근 체크", page_icon="📍")
 st.markdown("📍 위치 기반 출퇴근 기록")
@@ -104,8 +132,7 @@ if loc:
                         kst = pytz.timezone('Asia/Seoul')
                         now_dt = datetime.now(kst)
                         if now_dt.hour < 18:
-                            st.session_state['confirm_early_leave'] = True
-                            st.rerun()
+                            show_early_leave_dialog(name, user_lat, user_lon, distance)
                         else:
                             try:
                                 sheet = get_sheet()
@@ -117,28 +144,6 @@ if loc:
                                 err_msg = traceback.format_exc()
                                 st.code(err_msg, language="bash") 
                                 st.stop() 
-                # 조퇴 확인 UI
-                if st.session_state.get('confirm_early_leave'):
-                    st.warning("⚠️ 현재 오후 6시 이전입니다. 조퇴하시겠습니까?")
-                    col_y, col_n = st.columns(2)
-                    with col_y:
-                        if st.button("네 (조퇴)"):
-                            try:
-                                sheet = get_sheet()
-                                kst = pytz.timezone('Asia/Seoul')
-                                now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
-                                sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
-                                st.success(f"{name}님 {now} 조퇴 기록 완료!")
-                            except Exception as e:
-                                import traceback
-                                err_msg = traceback.format_exc()
-                                st.code(err_msg, language="bash")
-                            finally:
-                                st.session_state['confirm_early_leave'] = False
-                    with col_n:
-                        if st.button("아니오"):
-                            st.session_state['confirm_early_leave'] = False
-                            st.rerun() 
 
     else:
         st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
