@@ -27,7 +27,6 @@ def check_is_clocked_in(sheet, name):
             record_type = row[2]
             if timestamp_str.startswith(today_date) and record_name == name and record_type in ["출근", "지각"]:
                 return True
-
         return False
     except Exception as e:
         print(f"Error checking attendance: {e}")
