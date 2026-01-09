@@ -57,9 +57,12 @@ def show_name_selection_dialog(user_list):
     # 3열 그리드로 버튼 배치
     cols = st.columns(3)
     for i, user in enumerate(user_list):
+        # '/'를 줄바꿈 문자 '\n'으로 치환하여 표시
+        display_name = user.replace("/", "\n")
         with cols[i % 3]:
-            if st.button(user, use_container_width=True, key=f"btn_user_select_{i}"):
-                st.session_state["selected_name_radio"] = user
+            # key를 unique하게 설정
+            if st.button(display_name, use_container_width=True, key=f"btn_user_select_{i}"):
+                st.session_state["selected_name_radio"] = user # 저장 시에는 원본(user) 저장
                 st.rerun()
 
 # --- UI 및 로직 ---
@@ -83,6 +86,12 @@ st.markdown("""
     }
     div[role="radiogroup"] > label:hover {
         background-color: #e0e2e6;       /* 호버 효과 */
+    }
+    /* 버튼 텍스트 줄바꿈 허용 */
+    div[data-testid="stButton"] button p {
+        white-space: pre-wrap !important;
+        line-height: 1.2 !important;
+        text-align: center !important;
     }
     </style>
     <div class="responsive-title">📍SCP-LAB 위치 기반 출퇴근 기록</div>
