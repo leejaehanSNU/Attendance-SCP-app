@@ -72,7 +72,17 @@ if "user_names" in st.secrets:
     user_list = st.secrets["user_names"]
 else:
     user_list = ["관리자에게 문의하세요(secrets.toml 설정 필요)"]
-name = st.radio("이름을 선택하세요", user_list, index=None)
+saved_name = st.session_state.get("selected_name_radio", None)
+btn_label = f"이름: {saved_name}" if saved_name else "출결 인원 선택 🔽"
+
+with st.popover(btn_label, use_container_width=True):
+    name = st.radio(
+        "이름 목록",
+        user_list,
+        index=user_list.index(saved_name) if saved_name in user_list else None,
+        key="selected_name_radio",
+        label_visibility="collapsed"
+    )
 
 # 2. 위치 가져오기 (브라우저 GPS)
 loc = get_geolocation()
@@ -87,10 +97,6 @@ if loc:
     
     st.write(f"현재 위치 감지됨: 연구실과의 거리 **{distance:.1f}m**")
     
-    # 지도 표시 (선택 사항)
-    df_map = pd.DataFrame({'lat': [user_lat, OFFICE_LAT], 'lon': [user_lon, OFFICE_LON]})
-    st.map(df_map, zoom=15)
-
     # 반경 체크 및 버튼 표시
     if distance <= ALLOWED_RADIUS_M:
         st.success("✅ 연구실 근처입니다. 출퇴근이 가능합니다.")
@@ -170,6 +176,11 @@ if loc:
 
     else:
         st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
+    
+    # 지도 표시 (선택 사항)
+    df_map = pd.DataFrame({'lat': [user_lat, OFFICE_LAT], 'lon': [user_lon, OFFICE_LON]})
+    st.map(df_map, zoom=15)
+
 else:
     st.info("📍 위치 권한을 허용하고 잠시 기다려주세요 (브라우저 새로고침 필요할 수 있음)")
 
