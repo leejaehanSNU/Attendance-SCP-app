@@ -44,7 +44,7 @@ if loc:
     user_point = (user_lat, user_lon)
     distance = geodesic(office_point, user_point).meters
     
-    st.write(f"현재 위치 감지됨: 회사와의 거리 **{distance:.1f}m**")
+    st.write(f"현재 위치 감지됨: 연구실과의 거리 **{distance:.1f}m**")
     
     # 지도 표시 (선택 사항)
     df_map = pd.DataFrame({'lat': [user_lat, OFFICE_LAT], 'lon': [user_lon, OFFICE_LON]})
@@ -52,7 +52,7 @@ if loc:
 
     # 3. 반경 체크 및 버튼 표시
     if distance <= ALLOWED_RADIUS_M:
-        st.success("✅ 회사 근처입니다. 출퇴근이 가능합니다.")
+        st.success("✅ 연구실 근처입니다. 출퇴근이 가능합니다.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -84,7 +84,7 @@ if loc:
                     except Exception as e:
                         st.error(f"오류 발생: {e}")
     else:
-        st.error(f"🚫 회사 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
+        st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
 else:
     st.info("📍 위치 권한을 허용하고 잠시 기다려주세요 (브라우저 새로고침 필요할 수 있음)")
 
