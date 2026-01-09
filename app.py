@@ -27,7 +27,7 @@ def get_sheet():
 
 # --- UI 및 로직 ---
 st.set_page_config(page_title="출퇴근 체크", page_icon="📍")
-st.title("📍 위치 기반 출퇴근 기록")
+st.markdown("## 📍 위치 기반 출퇴근 기록")
 
 # 1. 사용자 정보 입력
 name = st.text_input("이름을 입력하세요", placeholder="예: 홍길동")
