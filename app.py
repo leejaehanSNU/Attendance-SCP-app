@@ -51,6 +51,17 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
         if st.button("아니오"):
             st.rerun()
 
+@dlg("출결 인원 선택")
+def show_name_selection_dialog(user_list):
+    st.write("본인의 이름을 터치해주세요.")
+    # 3열 그리드로 버튼 배치
+    cols = st.columns(3)
+    for i, user in enumerate(user_list):
+        with cols[i % 3]:
+            if st.button(user, use_container_width=True, key=f"btn_user_select_{i}"):
+                st.session_state["selected_name_radio"] = user
+                st.rerun()
+
 # --- UI 및 로직 ---
 st.set_page_config(page_title="출퇴근 체크", page_icon="📍")
 st.markdown("""
@@ -82,20 +93,21 @@ if "user_names" in st.secrets:
     user_list = st.secrets["user_names"]
 else:
     user_list = ["관리자에게 문의하세요(secrets.toml 설정 필요)"]
-if "popover_key" not in st.session_state:
-    st.session_state["popover_key"] = 0
-def on_name_selected(): pass 
-saved_name = st.session_state.get("selected_name_radio", None)
-btn_label = f"이름: {saved_name}" if saved_name else "출결 인원 선택 🔽"
-with st.popover(btn_label):
-    name = st.radio(
-        "이름 목록",
-        user_list,
-        index=user_list.index(saved_name) if saved_name in user_list else None,
-        key="selected_name_radio",
-        label_visibility="collapsed",
-        on_change=on_name_selected
-    )
+if "selected_name_radio" not in st.session_state:
+    st.session_state["selected_name_radio"] = None
+name = st.session_state["selected_name_radio"]
+if not name:
+    # 이름이 선택되지 않았을 때
+    st.info("출결 인원을 선택해주세요 🔽")
+    if st.button("출결 인원 선택", use_container_width=True, type="primary"):
+        show_name_selection_dialog(user_list)
+else:
+    c1, c2 = st.columns([1, 5])
+    with c1:
+        if st.button("🔄", help="사용자 변경"):
+            show_name_selection_dialog(user_list)
+    with c2:
+        st.success(f"**{name}**님 안녕하세요! 👋")
 
 # 2. 위치 가져오기 (브라우저 GPS)
 loc = get_geolocation()
