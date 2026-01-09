@@ -63,6 +63,16 @@ st.markdown("""
         text-overflow: ellipsis;  /* 넘치면 ... 표시 (필요시) */
         margin-bottom: 20px;
     }
+    /* 라디오 버튼 간격 조정 */
+    div[role="radiogroup"] > label {
+        margin-bottom: 12px !important;  /* 항목 간 간격 추가 */
+        padding: 10px !important;        /* 터치 영역 확대 */
+        border-radius: 8px;              /* 시각적 구분감 */
+        background-color: #f0f2f6;       /* 연한 배경색 (선택사항) */
+    }
+    div[role="radiogroup"] > label:hover {
+        background-color: #e0e2e6;       /* 호버 효과 */
+    }
     </style>
     <div class="responsive-title">📍SCP-LAB 위치 기반 출퇴근 기록</div>
     """, unsafe_allow_html=True)
