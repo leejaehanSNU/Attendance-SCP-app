@@ -53,7 +53,7 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
 
 # --- UI 및 로직 ---
 st.set_page_config(page_title="출퇴근 체크", page_icon="📍")
-st.markdown("📍 위치 기반 출퇴근 기록")
+st.markdown("#📍 위치 기반 출퇴근 기록")
 
 # 1. 사용자 정보 입력
 # TODO: 나중에 로그인 기능으로 구현 가능하도록 고려
