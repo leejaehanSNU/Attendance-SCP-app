@@ -72,7 +72,7 @@ if "user_names" in st.secrets:
     user_list = st.secrets["user_names"]
 else:
     user_list = ["관리자에게 문의하세요(secrets.toml 설정 필요)"]
-name = st.selectbox("이름을 선택하세요", user_list, index=None, placeholder="이름을 선택해주세요")
+name = st.radio("이름을 선택하세요", user_list, index=None)
 
 # 2. 위치 가져오기 (브라우저 GPS)
 loc = get_geolocation()
