@@ -53,7 +53,19 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
 
 # --- UI 및 로직 ---
 st.set_page_config(page_title="출퇴근 체크", page_icon="📍")
-st.markdown("#📍 위치 기반 출퇴근 기록")
+st.markdown("""
+    <style>
+    .responsive-title {
+        font-size: clamp(1.2rem, 5vw, 2rem); /* 최소 1.2rem, 화면의 5%, 최대 2rem */
+        font-weight: bold;
+        white-space: nowrap;      /* 줄바꿈 방지 */
+        overflow: hidden;         /* 넘치는 텍스트 숨김 (필요시) */
+        text-overflow: ellipsis;  /* 넘치면 ... 표시 (필요시) */
+        margin-bottom: 20px;
+    }
+    </style>
+    <div class="responsive-title">📍SCP-LAB 위치 기반 출퇴근 기록</div>
+    """, unsafe_allow_html=True)
 
 # 1. 사용자 정보 입력
 # TODO: 나중에 로그인 기능으로 구현 가능하도록 고려
@@ -118,6 +130,10 @@ if loc:
                             err_msg = traceback.format_exc()
                             st.code(err_msg, language="bash") 
                             st.stop()  
+                        finally:
+                            st.session_state['force_rerun'] = True # 메인 화면 갱신 유도
+                            time.sleep(1.5)
+                            st.rerun()  
 
         with col2:
             if is_out:
@@ -144,6 +160,10 @@ if loc:
                                 err_msg = traceback.format_exc()
                                 st.code(err_msg, language="bash") 
                                 st.stop() 
+                            finally:
+                                st.session_state['force_rerun'] = True # 메인 화면 갱신 유도
+                                time.sleep(1.5)
+                                st.rerun()
 
     else:
         st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
