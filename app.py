@@ -68,8 +68,9 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # 1. 사용자 정보 입력
-# TODO: 나중에 로그인 기능으로 구현 가능하도록 고려
-name = st.text_input("이름을 입력하세요", placeholder="예: 홍길동")
+if "user_names" in st.secrets:
+    user_list = st.secrets["user_names"]
+    name = st.selectbox("이름을 선택하세요", user_list, index=None, placeholder="이름을 선택해주세요")
 
 # 2. 위치 가져오기 (브라우저 GPS)
 loc = get_geolocation()
