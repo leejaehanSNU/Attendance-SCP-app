@@ -82,16 +82,20 @@ if "user_names" in st.secrets:
     user_list = st.secrets["user_names"]
 else:
     user_list = ["관리자에게 문의하세요(secrets.toml 설정 필요)"]
+if "popover_key" not in st.session_state:
+    st.session_state["popover_key"] = 0
+def on_name_selected():
+    st.session_state["popover_key"] += 1
 saved_name = st.session_state.get("selected_name_radio", None)
 btn_label = f"이름: {saved_name}" if saved_name else "출결 인원 선택 🔽"
-
-with st.popover(btn_label, use_container_width=True):
+with st.popover(btn_label, use_container_width=True, key=f"user_select_{st.session_state['popover_key']}"):
     name = st.radio(
         "이름 목록",
         user_list,
         index=user_list.index(saved_name) if saved_name in user_list else None,
         key="selected_name_radio",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        on_change=on_name_selected
     )
 
 # 2. 위치 가져오기 (브라우저 GPS)
