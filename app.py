@@ -67,8 +67,11 @@ if loc:
                         sheet.append_row([now, name, "출근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
                         st.balloons()
                         st.success(f"{name}님 {now} 출근 기록 완료!")
-                    except Exception as e:
-                        st.error(f"오류 발생: {e}")
+                    except Exception as e: #후에 조종
+                        import traceback
+                        err_msg = traceback.format_exc()
+                        st.code(err_msg, language="bash") 
+                        st.stop() 
 
         with col2:
             if st.button("퇴근하기 🌙"):
@@ -81,8 +84,12 @@ if loc:
                         now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
                         sheet.append_row([now, name, "퇴근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
                         st.success(f"{name}님 {now} 퇴근 기록 완료!")
-                    except Exception as e:
-                        st.error(f"오류 발생: {e}")
+                    except Exception as e: #후에 조정 필요 사용자 친화적이지 않은 에러 메시지
+                        import traceback
+                        err_msg = traceback.format_exc()
+                        st.code(err_msg, language="bash") 
+                        st.stop() 
+
     else:
         st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
 else:
