@@ -98,8 +98,8 @@ if "selected_name_radio" not in st.session_state:
 name = st.session_state["selected_name_radio"]
 if not name:
     # 이름이 선택되지 않았을 때
-    st.info("출결 인원을 선택해주세요 🔽")
-    if st.button("출결 인원 선택", use_container_width=True, type="primary"):
+    st.info("본인을 선택해주세요 🔽")
+    if st.button("사용자 선택", use_container_width=True, type="primary"):
         show_name_selection_dialog(user_list)
 else:
     c1, c2 = st.columns([1, 5])
