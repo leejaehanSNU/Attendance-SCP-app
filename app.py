@@ -14,6 +14,8 @@ OFFICE_LON = 126.952096
 ALLOWED_RADIUS_M = 100 
 
 # --- 구글 시트 연결 함수 ---
+# 리소스 캐싱을 사용하여 매번 재연결하지 않도록 함 (API 호출 절약)
+@st.cache_resource
 def get_sheet():
     scope = ['https://www.googleapis.com/auth/spreadsheets']
     credentials = Credentials.from_service_account_info(
