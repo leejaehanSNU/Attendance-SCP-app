@@ -1,15 +1,22 @@
+import streamlit as st
 from datetime import datetime
 import pytz
+
+# TTL을 10초로 설정하여 API 호출 최소화
+# _sheet_obj: 인자 이름 앞에 언더바(_)를 붙이면 hash 계산에서 제외되어 캐싱 키 생성 시 무시됨
+@st.cache_data(ttl=10)
+def get_cached_records(_sheet_obj):
+    return _sheet_obj.get_all_values()
 
 def check_is_clocked_in(sheet, name):
     """ 특정 사용자가 오늘 날짜(KST 기준)에 '출근' 기록을 남겼는지 확인하는 함수 """
     try:
-        all_records = sheet.get_all_values()
+        # 캐싱된 함수 사용
+        all_records = get_cached_records(sheet)
         kst = pytz.timezone('Asia/Seoul')
         today_date = datetime.now(kst).strftime('%Y-%m-%d')
         for row in all_records:
             # row 구조: [timestamp, name, type, lat,lon, distance]
-            # ['2023-10-27 09:00:00', '홍길동', '출근', ...]
             if len(row) < 3: continue
             timestamp_str = row[0]
             record_name = row[1]
@@ -26,7 +33,7 @@ def check_is_clocked_in(sheet, name):
 def check_is_clocked_out(sheet, name):
     """ 특정 사용자가 오늘 날짜(KST 기준)에 '퇴근' 또는 '조퇴' 기록을 남겼는지 확인하는 함수 """
     try:
-        all_records = sheet.get_all_values()
+        all_records = get_cached_records(sheet)
         kst = pytz.timezone('Asia/Seoul')
         today_date = datetime.now(kst).strftime('%Y-%m-%d')
         for row in all_records:
