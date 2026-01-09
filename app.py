@@ -9,8 +9,8 @@ from datetime import datetime
 import pytz
 
 # --- 설정 (회사 위치 및 반경) ---
-OFFICE_LAT = 37.4979  # 예: 강남역 위도 (수정 필요)
-OFFICE_LON = 127.0276 # 예: 강남역 경도 (수정 필요)
+OFFICE_LAT = 37.456461  # 예: 강남역 위도 (수정 필요)
+OFFICE_LON = 126.952096 # 예: 강남역 경도 (수정 필요)
 ALLOWED_RADIUS_M = 100 # 허용 반경 (미터)
 
 # --- 구글 시트 연결 함수 ---
