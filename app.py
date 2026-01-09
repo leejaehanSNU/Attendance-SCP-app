@@ -88,7 +88,7 @@ def on_name_selected():
     st.session_state["popover_key"] += 1
 saved_name = st.session_state.get("selected_name_radio", None)
 btn_label = f"이름: {saved_name}" if saved_name else "출결 인원 선택 🔽"
-with st.popover(btn_label, use_container_width=True, key=f"user_select_{st.session_state['popover_key']}"):
+with st.popover(btn_label, key=f"user_select_{st.session_state['popover_key']}"):
     name = st.radio(
         "이름 목록",
         user_list,
