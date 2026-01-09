@@ -14,7 +14,6 @@ OFFICE_LON = 126.952096
 ALLOWED_RADIUS_M = 100 
 
 # --- 구글 시트 연결 함수 ---
-# 리소스 캐싱을 사용하여 매번 재연결하지 않도록 함 (API 호출 절약)
 @st.cache_resource
 def get_sheet():
     scope = ['https://www.googleapis.com/auth/spreadsheets']
@@ -24,7 +23,6 @@ def get_sheet():
     client = gspread.authorize(credentials)
     sheet_url = st.secrets["private_gsheets_url"]
     return client.open_by_url(sheet_url).sheet1
-
 
 if hasattr(st, "dialog"):
     dlg = st.dialog
@@ -42,6 +40,7 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
                 kst = pytz.timezone('Asia/Seoul')
                 now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
                 sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
+                clear_attendance_cache()
                 st.success(f"{name}님 {now} 조퇴 기록 완료!")
                 st.session_state['force_rerun'] = True # 메인 화면 갱신 유도
                 time.sleep(1.5)
@@ -161,13 +160,14 @@ if loc:
                             kst = pytz.timezone('Asia/Seoul')
                             now_dt = datetime.now(kst)
                             now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
-
                             # 10시 이후 체크
                             if now_dt.hour >= 10:
                                 sheet.append_row([now, name, "지각", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
+                                clear_attendance_cache() # 캐시 초기화
                                 st.warning(f"⚠️ {name}님 10시가 지났습니다. 지각 처리됩니다.")
                             else:
                                 sheet.append_row([now, name, "출근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
+                                clear_attendance_cache() # 캐시 초기화
                                 st.balloons()
                                 st.success(f"{name}님 {now} 출근 기록 완료!")
                         except Exception as e: #후에 조종
@@ -199,6 +199,7 @@ if loc:
                                 sheet = get_sheet()
                                 now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
                                 sheet.append_row([now, name, "퇴근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
+                                clear_attendance_cache() # 캐시 초기화
                                 st.success(f"{name}님 {now} 퇴근 기록 완료!")
                             except Exception as e:
                                 import traceback

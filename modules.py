@@ -8,6 +8,10 @@ import pytz
 def get_cached_records(_sheet_obj):
     return _sheet_obj.get_all_values()
 
+def clear_attendance_cache():
+    """출퇴근 기록이 갱신되었을 때 캐시를 강제로 비우는 함수"""
+    get_cached_records.clear()
+
 def check_is_clocked_in(sheet, name):
     """ 특정 사용자가 오늘 날짜(KST 기준)에 '출근' 기록을 남겼는지 확인하는 함수 """
     try:
