@@ -32,14 +32,23 @@ else:
 @dlg("조퇴 확인")
 def show_early_leave_dialog(name, user_lat, user_lon, distance):
     st.warning("⚠️ 현재 오후 6시 이전입니다. 조퇴하시겠습니까?")
+    # 조퇴 사유 입력
+    reason = st.text_area(
+        "조퇴 사유",
+        placeholder="예: 병원 예약, 가족 행사, 개인 사정 등",
+        help="조퇴 사유를 간단히 입력해주세요.",
+    )
     col_y, col_n = st.columns(2)
     with col_y:
         if st.button("네 (조퇴)"):
             try:
+                if not reason or not reason.strip():
+                    st.warning("조퇴 사유를 입력해주세요.")
+                    st.stop()
                 sheet = get_sheet()
                 kst = pytz.timezone('Asia/Seoul')
                 now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
-                sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
+                sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m", reason.strip()])
                 clear_attendance_cache()
                 st.success(f"{name}님 {now} 조퇴 기록 완료!")
                 st.session_state['force_rerun'] = True # 메인 화면 갱신 유도
@@ -182,7 +191,7 @@ if loc:
 
         with col2:
             if is_out:
-                st.button("출근하기 ☀️", disabled=True, key="btn_in_disabled_out")
+                st.button("퇴근하기 🌙", disabled=True, key="btn_out_disabled")
                 st.info("이미 오늘 퇴근 하셨습니다!")
             else:
                 if st.button("퇴근하기 🌙"):
