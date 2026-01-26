@@ -13,17 +13,6 @@ OFFICE_LAT = 37.456461
 OFFICE_LON = 126.952096 
 ALLOWED_RADIUS_M = 100 
 
-# --- 구글 시트 연결 함수 ---
-@st.cache_resource
-def get_sheet():
-    scope = ['https://www.googleapis.com/auth/spreadsheets']
-    credentials = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"], scopes=scope
-    )
-    client = gspread.authorize(credentials)
-    sheet_url = st.secrets["private_gsheets_url"]
-    return client.open_by_url(sheet_url).sheet1
-
 if hasattr(st, "dialog"):
     dlg = st.dialog
 else:
@@ -106,6 +95,10 @@ st.markdown("""
     </style>
     <div class="responsive-title">📍SCP-LAB 위치 기반 출퇴근 기록</div>
     """, unsafe_allow_html=True)
+
+# 0. 페이지 이동 버튼
+if st.button("📋 전체 기록 보기", use_container_width=True):
+    st.switch_page("pages/view_records.py")
 
 # 1. 사용자 정보 입력
 if "user_names" in st.secrets:
