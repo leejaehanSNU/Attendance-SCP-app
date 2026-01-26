@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from modules import *
 
@@ -75,44 +75,145 @@ def view_records_page():
     div[data-testid="stButton"] button {
         width: 100%;
     }
+    th, td {
+        white-space: pre-wrap !important; 
+        vertical-align: top !important;
+        font-size: 0.9rem !important;
+    }
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("📋 출퇴근 기록 확인")
+    st.title("📋 주간 출결 현황")
 
     try:
         with st.spinner("데이터를 불러오는 중입니다..."):
             sheet = get_sheet()
             data = get_cached_records(sheet)
-        if data:
+        
+        if data and len(data) > 1:
             headers = data[0]
-            rows = data[1:]
-            df = pd.DataFrame(rows, columns=headers)
-            if "날짜시간" in df.columns:
-                df = df.sort_values(by="날짜시간", ascending=False)
-            if "위치" in df.columns:
-                df = df.drop(columns=["위치"])
-            # 조퇴 사유 처리 로직
-            if "조퇴 사유" in df.columns:
-                def categorize_reason(text):
-                    if not isinstance(text, str) or not text.strip():
-                        return ""
-                    if any(keyword in text for keyword in ["병원", "몸살", "감기", "복통"]):
-                        return "병결"
-                    if "개인" in text:
-                        return "개인사유"
-                    return "확인 필요"
-                df["조퇴 사유"] = df["조퇴 사유"].apply(categorize_reason) 
+            # 인덱스로 접근하여 컬럼명 유추 (데이터 구조 변경 대비)
+            df = pd.DataFrame(data[1:], columns=headers)
+            
+            col_ts = headers[0] # 날짜시간
+            col_name = headers[1] # 이름
+            col_type = headers[2] # 비고/유형 (출근/퇴근 등)
+            
+            # 주간 필터링 로직
+            df['dt'] = pd.to_datetime(df[col_ts], errors='coerce')
+            df = df.dropna(subset=['dt'])
+            
+            kst = pytz.timezone('Asia/Seoul')
+            now_kst = datetime.now(kst)
+            today = now_kst.date()
+            start_of_week = today - timedelta(days=today.weekday()) # 월요일
+            end_of_week = start_of_week + timedelta(days=6) # 일요일
+            
+            # 이번주 데이터만 필터링
+            mask = (df['dt'].dt.date >= start_of_week) & (df['dt'].dt.date <= end_of_week)
+            week_df = df[mask].copy()
+            week_df = week_df.sort_values('dt')
+
+            week_days_kor = ["월", "화", "수", "목", "금", "토", "일"]
+            # 월~금(5일)만 표시할지, 일주일 전체 표시할지 -> 일단 월~금 표시
+            display_days = [start_of_week + timedelta(days=i) for i in range(5)]
+            day_cols = [f"{d.month}.{d.day} ({week_days_kor[d.weekday()]})" for d in display_days]
+
+            summary_list = []
+            users = week_df[col_name].unique()
+            
+            for user in users:
+                user_rows = week_df[week_df[col_name] == user]
+                # 통계 변수
+                present_days_set = set()
+                late_cnt = 0
+                early_leave_cnt = 0
+                total_duration = 0
+                duration_cnt = 0
+                row_data = {"이름": user}
+                
+                for i, d in enumerate(display_days):
+                    col_key = day_cols[i]
+                    day_recs = user_rows[user_rows['dt'].dt.date == d]
+                    
+                    cell_text = ""
+                    if not day_recs.empty:
+                        present_days_set.add(d)
+                        ins = day_recs[day_recs[col_type].isin(["출근", "지각"])]
+                        start_time = ins['dt'].min() if not ins.empty else None
+                        outs = day_recs[day_recs[col_type].isin(["퇴근", "조퇴"])]
+                        end_time = outs['dt'].max() if not outs.empty else None
+                        lines = []
+                        
+                        # 시간 표시
+                        s_str = start_time.strftime("%H:%M:%S") if start_time else ""
+                        e_str = end_time.strftime("%H:%M:%S") if end_time else ""
+                        if s_str: lines.append(f"출근: {s_str}")
+                        if e_str: lines.append(f"퇴근: {e_str}")
+                        
+                        # 상태/태그 (지각, 조퇴 등)
+                        types = day_recs[col_type].unique()
+                        tags = []
+                        if "지각" in types: 
+                            tags.append("지각")
+                            late_cnt += 1
+                        if "조퇴" in types: 
+                            tags.append("조퇴")
+                            early_leave_cnt += 1
+                        
+                        if tags: lines.append(f"[{', '.join(tags)}]")
+                        
+                        # 근무 시간
+                        if start_time and end_time:
+                            diff = (end_time - start_time).total_seconds()
+                            hours = diff / 3600
+                            lines.append(f"시간: 약 {hours:.1f}h")
+                            total_duration += diff
+                            duration_cnt += 1
+                        
+                        # 사유 (조퇴가 있는 경우 등)
+                        if "조퇴 사유" in day_recs.columns:
+                            reasons = day_recs[day_recs[col_type] == "조퇴"]["조퇴 사유"].dropna().unique()
+                            for r in reasons:
+                                if r and str(r).strip():
+                                    lines.append(f"사유: {r}")
+
+                        cell_text = "\n".join(lines)
+                    
+                    row_data[col_key] = cell_text
+                avg_time = (total_duration / 3600 / duration_cnt) if duration_cnt > 0 else 0
+                summary_text = (
+                    f"출근: {len(present_days_set)}일\n"
+                    f"지각: {late_cnt}회\n"
+                    f"조퇴: {early_leave_cnt}회\n"
+                    f"평균: {avg_time:.1f}h"
+                )
+                row_data["요약"] = summary_text
+                
+                summary_list.append(row_data)
+
+            if summary_list:
+                res_df = pd.DataFrame(summary_list)
+                # 컬럼 순서 지정
+                cols = ["이름", "요약"] + day_cols
+                final_cols = [c for c in cols if c in res_df.columns]
+                res_df = res_df[final_cols]
+                
+                st.dataframe(res_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("이번 주 표시할 기록이 없습니다.")
 
             if st.button("🔄 새로고침"):
                 clear_attendance_cache()
                 st.rerun()
-            
-            st.dataframe(df, use_container_width=True, hide_index=True)
+
         else:
-            st.info("표시할 기록이 없습니다.")
+            st.info("데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+        # 디버깅용
+        # import traceback
+        # st.code(traceback.format_exc())
 
     st.divider()
     if st.button("🏠 메인 화면으로 이동"):
