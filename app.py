@@ -90,7 +90,20 @@ def view_records_page():
             df = pd.DataFrame(rows, columns=headers)
             if "날짜시간" in df.columns:
                 df = df.sort_values(by="날짜시간", ascending=False)
-            
+            if "위치" in df.columns:
+                df = df.drop(columns=["위치"])
+            # 조퇴 사유 처리 로직
+            if "조퇴 사유" in df.columns:
+                def categorize_reason(text):
+                    if not isinstance(text, str) or not text.strip():
+                        return ""
+                    if any(keyword in text for keyword in ["병원", "몸살", "감기", "복통"]):
+                        return "병결"
+                    if "개인" in text:
+                        return "개인사유"
+                    return "확인 필요"
+                df["조퇴 사유"] = df["조퇴 사유"].apply(categorize_reason) 
+
             if st.button("🔄 새로고침"):
                 clear_attendance_cache()
                 st.rerun()
