@@ -83,7 +83,7 @@ def view_records_page():
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("📋 주간 출결 현황")
+    st.title("📋 출결 현황")
 
     try:
         with st.spinner("데이터를 불러오는 중입니다..."):
@@ -92,102 +92,111 @@ def view_records_page():
         
         if data and len(data) > 1:
             headers = data[0]
-            # 인덱스로 접근하여 컬럼명 유추 (데이터 구조 변경 대비)
             df = pd.DataFrame(data[1:], columns=headers)
             
             col_ts = headers[0] # 날짜시간
             col_name = headers[1] # 이름
             col_type = headers[2] # 비고/유형 (출근/퇴근 등)
-            
-            # 주간 필터링 로직
             df['dt'] = pd.to_datetime(df[col_ts], errors='coerce')
             df = df.dropna(subset=['dt'])
             
             kst = pytz.timezone('Asia/Seoul')
             now_kst = datetime.now(kst)
             today = now_kst.date()
-            start_of_week = today - timedelta(days=today.weekday()) # 월요일
-            end_of_week = start_of_week + timedelta(days=6) # 일요일
+            # 이번 달 데이터만 가져옴
+            mask_month = (df['dt'].dt.year == today.year) & (df['dt'].dt.month == today.month)
+            month_df = df[mask_month].copy().sort_values('dt')
             
-            # 이번주 데이터만 필터링
-            mask = (df['dt'].dt.date >= start_of_week) & (df['dt'].dt.date <= end_of_week)
-            week_df = df[mask].copy()
-            week_df = week_df.sort_values('dt')
-
             week_days_kor = ["월", "화", "수", "목", "금", "토", "일"]
-            # 월~금(5일)만 표시할지, 일주일 전체 표시할지 -> 일단 월~금 표시
-            display_days = [start_of_week + timedelta(days=i) for i in range(5)]
-            day_cols = [f"{d.month}.{d.day} ({week_days_kor[d.weekday()]})" for d in display_days]
-
+            today_str = f"{today.month}.{today.day} ({week_days_kor[today.weekday()]})"
             summary_list = []
-            users = week_df[col_name].unique()
+            users = month_df[col_name].unique()
             
             for user in users:
-                user_rows = week_df[week_df[col_name] == user]
-                # 통계 변수
-                present_days_set = set()
+                user_rows = month_df[month_df[col_name] == user]
+                user_rows['date_only'] = user_rows['dt'].dt.date
+                dates = user_rows['date_only'].unique()
+                
+                present_days_cnt = len(dates) # 출석 일수
                 late_cnt = 0
                 early_leave_cnt = 0
                 total_duration = 0
                 duration_cnt = 0
-                row_data = {"이름": user}
+                for d in dates:
+                    day_recs = user_rows[user_rows['date_only'] == d]
+                    types = day_recs[col_type].unique()
+                    
+                    if "지각" in types: late_cnt += 1
+                    if "조퇴" in types: early_leave_cnt += 1
+                    
+                    ins = day_recs[day_recs[col_type].isin(["출근", "지각"])]
+                    outs = day_recs[day_recs[col_type].isin(["퇴근", "조퇴"])]
+                    
+                    start_time = ins['dt'].min() if not ins.empty else None
+                    end_time = outs['dt'].max() if not outs.empty else None
+                    
+                    if start_time and end_time:
+                         diff = (end_time - start_time).total_seconds()
+                         total_duration += diff
+                         duration_cnt += 1
                 
-                for i, d in enumerate(display_days):
-                    col_key = day_cols[i]
-                    day_recs = user_rows[user_rows['dt'].dt.date == d]
-                    cell_text = ""
-                    if not day_recs.empty:
-                        present_days_set.add(d)
-                        ins = day_recs[day_recs[col_type].isin(["출근", "지각"])]
-                        start_time = ins['dt'].min() if not ins.empty else None
-                        outs = day_recs[day_recs[col_type].isin(["퇴근", "조퇴"])]
-                        end_time = outs['dt'].max() if not outs.empty else None
-                        lines = []
-                        # 시간 표시
-                        s_str = start_time.strftime("%H:%M:%S") if start_time else ""
-                        e_str = end_time.strftime("%H:%M:%S") if end_time else ""
-                        if s_str: lines.append(f"출근: {s_str}")
-                        if e_str: lines.append(f"퇴근: {e_str}")
-                        # 상태/태그 (지각, 조퇴 등)
-                        types = day_recs[col_type].unique()
-                        tags = []
-                        if "지각" in types: 
-                            tags.append("지각")
-                            late_cnt += 1
-                        if "조퇴" in types: 
-                            tags.append("조퇴")
-                            early_leave_cnt += 1
-                        if tags: lines.append(f"[{', '.join(tags)}]")
-                        # 근무 시간
-                        if start_time and end_time:
-                            diff = (end_time - start_time).total_seconds()
-                            hours = diff / 3600
-                            lines.append(f"시간: 약 {hours:.1f}h")
-                            total_duration += diff
-                            duration_cnt += 1
-                        # 사유 (조퇴가 있는 경우 등)
-                        if "조퇴 사유" in day_recs.columns:
-                            reasons = day_recs[day_recs[col_type] == "조퇴"]["조퇴 사유"].dropna().unique()
-                            for r in reasons:
-                                if r and str(r).strip():
-                                    lines.append(f"사유: {r}")
-
-                        cell_text = "\n".join(lines)
-                    row_data[col_key] = cell_text
                 avg_time = (total_duration / 3600 / duration_cnt) if duration_cnt > 0 else 0
                 summary_text = (
-                    f"출근: {len(present_days_set)}일\n"
+                    f"출근: {present_days_cnt}일\n"
                     f"지각: {late_cnt}회\n"
                     f"조퇴: {early_leave_cnt}회\n"
                     f"평균: {avg_time:.1f}h"
                 )
-                row_data["요약"] = summary_text
+                
+                row_data = {"이름": user, "월간 요약": summary_text}
+                
+                day_recs_today = user_rows[user_rows['date_only'] == today]
+                cell_text = ""
+                
+                if not day_recs_today.empty:
+                    ins = day_recs_today[day_recs_today[col_type].isin(["출근", "지각"])]
+                    start_time = ins['dt'].min() if not ins.empty else None
+                    
+                    outs = day_recs_today[day_recs_today[col_type].isin(["퇴근", "조퇴"])]
+                    end_time = outs['dt'].max() if not outs.empty else None
+                    
+                    lines = []
+                    # 시간
+                    s_str = start_time.strftime("%H:%M:%S") if start_time else ""
+                    e_str = end_time.strftime("%H:%M:%S") if end_time else ""
+                    
+                    if s_str: lines.append(f"출근: {s_str}")
+                    if e_str: lines.append(f"퇴근: {e_str}")
+                    
+                    # 태그
+                    types = day_recs_today[col_type].unique()
+                    tags = []
+                    if "지각" in types: tags.append("지각")
+                    if "조퇴" in types: tags.append("조퇴")
+                    if tags: lines.append(f"[{', '.join(tags)}]")
+                    
+                    # 근무 시간
+                    if start_time and end_time:
+                         diff = (end_time - start_time).total_seconds()
+                         hours = diff / 3600
+                         lines.append(f"시간: 약 {hours:.1f}h")
+                    
+                    # 사유
+                    if "조퇴 사유" in day_recs_today.columns:
+                        reasons = day_recs_today[day_recs_today[col_type] == "조퇴"]["조퇴 사유"].dropna().unique()
+                        for r in reasons:
+                            if r and str(r).strip():
+                                lines.append(f"사유: {r}")
+                    
+                    cell_text = "\n".join(lines)
+                
+                row_data[today_str] = cell_text
                 summary_list.append(row_data)
 
             if summary_list:
                 res_df = pd.DataFrame(summary_list)
                 # 컬럼 순서 지정
-                cols = ["이름", "요약"] + day_cols
+                cols = ["이름", "월간 요약", today_str]
                 final_cols = [c for c in cols if c in res_df.columns]
                 res_df = res_df[final_cols]
                 
@@ -201,8 +210,7 @@ def view_records_page():
                 for _, row in res_df.iterrows():
                     html += "<tr style='border-bottom: 1px solid #eee;'>"
                     for col in final_cols:
-                        val = row[col] if row[col] else ""
-                        # 줄바꿈 처리 및 스타일링
+                        val = row[col] if pd.notna(row[col]) else ""
                         val_str = str(val)
                         if "지각" in val_str:
                             val_str = val_str.replace("지각", "<span style='color: #d9534f; font-weight:bold;'>지각</span>")
