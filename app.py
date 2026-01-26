@@ -193,7 +193,7 @@ def view_records_page():
                 
                 # HTML 테이블 생성
                 html = "<table style='width:100%; border-collapse: collapse; font-size: 0.9em;'>"
-                html += "<thead><tr style='background-color: #f0f2f6; border-bottom: 2px solid #ddd;'>"
+                html += "<thead><tr style='background-color: transparent; border-bottom: 2px solid #ddd;'>"
                 for col in final_cols:
                     html += f"<th style='padding: 8px; text-align: left; white-space: nowrap;'>{col}</th>"
                 html += "</tr></thead>"
