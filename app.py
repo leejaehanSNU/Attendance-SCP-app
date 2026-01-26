@@ -135,7 +135,6 @@ def view_records_page():
                 for i, d in enumerate(display_days):
                     col_key = day_cols[i]
                     day_recs = user_rows[user_rows['dt'].dt.date == d]
-                    
                     cell_text = ""
                     if not day_recs.empty:
                         present_days_set.add(d)
@@ -144,13 +143,11 @@ def view_records_page():
                         outs = day_recs[day_recs[col_type].isin(["퇴근", "조퇴"])]
                         end_time = outs['dt'].max() if not outs.empty else None
                         lines = []
-                        
                         # 시간 표시
                         s_str = start_time.strftime("%H:%M:%S") if start_time else ""
                         e_str = end_time.strftime("%H:%M:%S") if end_time else ""
                         if s_str: lines.append(f"출근: {s_str}")
                         if e_str: lines.append(f"퇴근: {e_str}")
-                        
                         # 상태/태그 (지각, 조퇴 등)
                         types = day_recs[col_type].unique()
                         tags = []
@@ -160,9 +157,7 @@ def view_records_page():
                         if "조퇴" in types: 
                             tags.append("조퇴")
                             early_leave_cnt += 1
-                        
                         if tags: lines.append(f"[{', '.join(tags)}]")
-                        
                         # 근무 시간
                         if start_time and end_time:
                             diff = (end_time - start_time).total_seconds()
@@ -170,7 +165,6 @@ def view_records_page():
                             lines.append(f"시간: 약 {hours:.1f}h")
                             total_duration += diff
                             duration_cnt += 1
-                        
                         # 사유 (조퇴가 있는 경우 등)
                         if "조퇴 사유" in day_recs.columns:
                             reasons = day_recs[day_recs[col_type] == "조퇴"]["조퇴 사유"].dropna().unique()
@@ -179,7 +173,6 @@ def view_records_page():
                                     lines.append(f"사유: {r}")
 
                         cell_text = "\n".join(lines)
-                    
                     row_data[col_key] = cell_text
                 avg_time = (total_duration / 3600 / duration_cnt) if duration_cnt > 0 else 0
                 summary_text = (
@@ -189,7 +182,6 @@ def view_records_page():
                     f"평균: {avg_time:.1f}h"
                 )
                 row_data["요약"] = summary_text
-                
                 summary_list.append(row_data)
 
             if summary_list:
@@ -199,7 +191,32 @@ def view_records_page():
                 final_cols = [c for c in cols if c in res_df.columns]
                 res_df = res_df[final_cols]
                 
-                st.dataframe(res_df, use_container_width=True, hide_index=True)
+                # HTML 테이블 생성
+                html = "<table style='width:100%; border-collapse: collapse; font-size: 0.9em;'>"
+                html += "<thead><tr style='background-color: #f0f2f6; border-bottom: 2px solid #ddd;'>"
+                for col in final_cols:
+                    html += f"<th style='padding: 8px; text-align: left; white-space: nowrap;'>{col}</th>"
+                html += "</tr></thead>"
+                html += "<tbody>"
+                for _, row in res_df.iterrows():
+                    html += "<tr style='border-bottom: 1px solid #eee;'>"
+                    for col in final_cols:
+                        val = row[col] if row[col] else ""
+                        # 줄바꿈 처리 및 스타일링
+                        val_str = str(val)
+                        if "지각" in val_str:
+                            val_str = val_str.replace("지각", "<span style='color: #d9534f; font-weight:bold;'>지각</span>")
+                        if "조퇴" in val_str:
+                            val_str = val_str.replace("조퇴", "<span style='color: #f0ad4e; font-weight:bold;'>조퇴</span>")
+                        if "결근" in val_str:
+                             val_str = val_str.replace("결근", "<span style='color: red; font-weight:bold;'>결근</span>")
+
+                        val_html = val_str.replace("\n", "<br>")
+                        html += f"<td style='padding: 8px; vertical-align: top; line-height: 1.4;'>{val_html}</td>"
+                    html += "</tr>"
+                html += "</tbody></table>"
+                
+                st.markdown(html, unsafe_allow_html=True)
             else:
                 st.info("이번 주 표시할 기록이 없습니다.")
 
