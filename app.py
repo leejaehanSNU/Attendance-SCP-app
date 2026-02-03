@@ -302,7 +302,7 @@ def view_main_page():
 
     # 위치 확인 및 출결 로직
     loc = get_geolocation()
-    if loc:
+    if loc and 'coords' in loc:
         user_lat = loc['coords']['latitude']
         user_lon = loc['coords']['longitude']
         office_point = (LAB_LAT, LAB_LON)
@@ -386,6 +386,8 @@ def view_main_page():
         
         df_map = pd.DataFrame({'lat': [user_lat, LAB_LAT], 'lon': [user_lon, LAB_LON]})
         st.map(df_map, zoom=15)
+    elif loc and 'error' in loc:
+        st.error(f"⚠️ 위치 정보를 불러오지 못했습니다: {loc['error']}\n브라우저 '위치 권한'을 허용했는지 확인해주세요.")
     else:
         st.info("📍 위치 권한을 허용하고 잠시 기다려주세요 (브라우저 새로고침 필요할 수 있음)")
 
