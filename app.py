@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import pytz
 from modules import *
 from io import BytesIO
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Border, Side, PatternFill
 
 LAB_LAT = 37.456461 
 LAB_LON = 126.952096 
@@ -329,9 +329,16 @@ def view_records_page():
                         worksheet.column_dimensions['B'].width = 25
                         for col in range(3, len(rep_df.columns) + 1):
                             worksheet.column_dimensions[worksheet.cell(1, col).column_letter].width = 35
-                        for row in worksheet.iter_rows(min_row=2, max_row=len(rep_df)+1):
+                        thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+                        fill_white = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
+                        fill_gray = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
+                        for idx, row in enumerate(worksheet.iter_rows(min_row=1, max_row=len(rep_df)+1), start=1):
+                            fill = fill_white if idx % 2 == 0 else fill_gray
                             for cell in row:
-                                cell.alignment = Alignment(wrap_text=True, vertical='top')
+                                cell.border = thin_border
+                                if idx > 1:
+                                    cell.alignment = Alignment(wrap_text=True, vertical='top')
+                                    cell.fill = fill
                     buffer.seek(0)
                     st.download_button(
                         label="💾 Excel 파일 다운로드",
