@@ -44,6 +44,7 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
                 sheet = get_sheet()
                 kst = pytz.timezone('Asia/Seoul')
                 now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
+                # 조퇴 사유는 기존대로. (스키마상 6번째 컬럼 추정)
                 sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m", reason.strip()])
                 clear_attendance_cache()
                 st.success(f"{name}님 {now} 조퇴 기록 완료!")
@@ -55,6 +56,73 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
                 st.code(traceback.format_exc())
     with col_n:
         if st.button("아니오"):
+            st.rerun()
+
+@dlg("지각 확인")
+def show_late_dialog(name, user_lat, user_lon, distance):
+    st.warning("⚠️ 현재 오전 10시 이후입니다. 지각 사유를 작성해주세요.")
+    # 지각 사유 입력
+    reason = st.text_area(
+        "지각 사유",
+        placeholder="예: [업무] 외근 복귀, 병원 진료 등",
+        help="지각 사유를 입력해주세요. [업무]를 포함하면 근무로 인정됩니다.",
+    )
+    col_y, col_n = st.columns(2)
+    with col_y:
+        if st.button("네 (지각 출근)"):
+            try:
+                if not reason or not reason.strip():
+                    st.warning("지각 사유를 입력해주세요.")
+                    st.stop()
+                sheet = get_sheet()
+                kst = pytz.timezone('Asia/Seoul')
+                now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
+                # 스키마: 날짜, 이름, 상태, 위치, 거리, 조퇴사유, 지각사유, 결근사유
+                # 지각사유는 7번째(index 6)이므로 앞의 조퇴사유(index 5)는 빈값 처리
+                sheet.append_row([now, name, "지각", f"{user_lat},{user_lon}", f"{distance:.1f}m", "", reason.strip()])
+                clear_attendance_cache()
+                st.success(f"{name}님 {now} 지각 기록 완료!")
+                st.session_state['force_rerun'] = True 
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e:
+                import traceback
+                st.code(traceback.format_exc())
+    with col_n:
+        if st.button("아니오"):
+            st.rerun()
+
+@dlg("결근 확인")
+def show_absent_dialog(name):
+    st.warning("결근 사유를 작성해주세요.")
+    reason = st.text_area(
+        "결근 사유",
+        placeholder="예: 연차, 병가, 예비군 등",
+        help="결근 사유를 필수로 입력해주세요.",
+    )
+    col_y, col_n = st.columns(2)
+    with col_y:
+        if st.button("네 (결근)"):
+            try:
+                if not reason or not reason.strip():
+                    st.warning("결근 사유를 입력해주세요.")
+                    st.stop()
+                sheet = get_sheet()
+                kst = pytz.timezone('Asia/Seoul')
+                now = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
+                # 스키마: 날짜, 이름, 상태, 위치, 거리, 조퇴사유, 지각사유, 결근사유
+                # 결근사유는 8번째(index 7)
+                sheet.append_row([now, name, "결근", "", "", "", "", reason.strip()])
+                clear_attendance_cache()
+                st.success(f"{name}님 {now} 결근 기록 완료!")
+                st.session_state['force_rerun'] = True 
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e:
+                import traceback
+                st.code(traceback.format_exc())
+    with col_n:
+        if st.button("취소"):
             st.rerun()
 
 @dlg("출결 인원 선택")
@@ -126,8 +194,30 @@ def view_records_page():
                     day_recs = user_rows[user_rows['date_only'] == d]
                     types = day_recs[col_type].unique()
                     
-                    if "지각" in types: late_cnt += 1
-                    if "조퇴" in types: early_leave_cnt += 1
+                    if "지각" in types: 
+                        # 지각 사유에 [업무]가 포함되어 있으면 카운트 제외
+                        is_late_count = True
+                        if "지각 사유" in day_recs.columns:
+                             # 해당 날짜의 지각 기록 중 하나라도 [업무]가 있으면 제외 (보통 하루 1건)
+                             reasons = day_recs[day_recs[col_type] == "지각"]["지각 사유"].fillna("").astype(str)
+                             for r in reasons:
+                                 if "[업무]" in r:
+                                     is_late_count = False
+                                     break
+                        if is_late_count:
+                            late_cnt += 1
+
+                    if "조퇴" in types: 
+                        # 조퇴 사유에 [업무]가 포함되어 있으면 카운트 제외
+                        is_early_count = True
+                        if "조퇴 사유" in day_recs.columns:
+                             reasons = day_recs[day_recs[col_type] == "조퇴"]["조퇴 사유"].fillna("").astype(str)
+                             for r in reasons:
+                                 if "[업무]" in r:
+                                     is_early_count = False
+                                     break
+                        if is_early_count:
+                            early_leave_cnt += 1
                     
                     ins = day_recs[day_recs[col_type].isin(["출근", "지각"])]
                     outs = day_recs[day_recs[col_type].isin(["퇴근", "조퇴"])]
@@ -299,6 +389,10 @@ def view_main_page():
                 show_name_selection_dialog(user_list)
         with c2:
             st.success(f"**{name}**님 안녕하세요! 👋")
+        
+        # 결근 버튼 (위치 무관)
+        if st.button("🙅 결근 통보 (위치 무관)", use_container_width=True):
+            show_absent_dialog(name)
 
     # 위치 확인 및 출결 로직
     loc = get_geolocation()
@@ -331,19 +425,21 @@ def view_main_page():
                             st.warning("이름을 입력해주세요.")
                         else:
                             try:
-                                sheet = get_sheet()
                                 kst = pytz.timezone('Asia/Seoul')
                                 now_dt = datetime.now(kst)
                                 now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
                                 if now_dt.hour >= 10:
-                                    sheet.append_row([now, name, "지각", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
-                                    clear_attendance_cache()
-                                    st.warning(f"⚠️ {name}님 10시가 지났습니다. 지각 처리됩니다.")
+                                    # 지각 시 팝업 띄우기
+                                    show_late_dialog(name, user_lat, user_lon, distance)
                                 else:
+                                    sheet = get_sheet()
                                     sheet.append_row([now, name, "출근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
                                     clear_attendance_cache()
                                     st.balloons()
                                     st.success(f"{name}님 {now} 출근 기록 완료!")
+                                    st.session_state['force_rerun'] = True
+                                    time.sleep(1.5)
+                                    st.rerun()
                             except Exception as e:
                                 import traceback
                                 st.code(traceback.format_exc())
