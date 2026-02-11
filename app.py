@@ -138,6 +138,71 @@ def show_name_selection_dialog(user_list):
                 st.session_state["selected_name_radio"] = user 
                 st.rerun()
 
+def process_nn_records(sheet):
+    kst = pytz.timezone('Asia/Seoul')
+    now_kst = datetime.now(kst)
+    today = now_kst.date()
+    current_hour = now_kst.hour
+    data = get_cached_records(sheet)
+    if not data or len(data) < 2:
+        return
+    headers = data[0]
+    df = pd.DataFrame(data[1:], columns=headers)
+    col_ts = headers[0]
+    col_name = headers[1]
+    col_type = headers[2]
+    df['dt'] = pd.to_datetime(df[col_ts], errors='coerce')
+    df = df.dropna(subset=['dt'])
+    if "user_names" in st.secrets:
+        all_users = st.secrets["user_names"]
+    else:
+        return
+    nn_records = []
+    for user in all_users:
+        user_df = df[df[col_name] == user].copy()
+        user_df['date_obj'] = user_df['dt'].dt.date
+        for check_date in pd.date_range(start=today - timedelta(days=30), end=today - timedelta(days=1)):
+            date_obj = check_date.date()
+            if date_obj.weekday() >= 5:
+                continue
+            day_records = user_df[user_df['date_obj'] == date_obj]
+            if day_records.empty:
+                continue
+            types = day_records[col_type].unique()
+            has_in = "\ucd9c\uadfc" in types or "\uc9c0\uac01" in types
+            has_out = "\ud1f4\uadfc" in types or "\uc870\ud1f4" in types
+            has_absent = "\uacb0\uadfc" in types
+            has_in_nn = "\ucd9c\uadfcNN" in types
+            has_out_nn = "\ud1f4\uadfcNN" in types
+            if has_absent:
+                continue
+            if has_in and not has_out and not has_out_nn:
+                ts = datetime.combine(date_obj, datetime.min.time().replace(hour=23, minute=59))
+                nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, "\ud1f4\uadfcNN", "", "", "\uc0ac\uc720\uc5c6\uc74c", "", ""])
+            elif not has_in and has_out and not has_in_nn:
+                ts = datetime.combine(date_obj, datetime.min.time().replace(hour=18, minute=0))
+                nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, "\ucd9c\uadfcNN", "", "", "", "\uc0ac\uc720\uc5c6\uc74c", ""])
+            elif not has_in and not has_out and not has_in_nn and not has_out_nn:
+                ts_in = datetime.combine(date_obj, datetime.min.time().replace(hour=18, minute=0))
+                ts_out = datetime.combine(date_obj, datetime.min.time().replace(hour=23, minute=59))
+                nn_records.append([ts_in.strftime('%Y-%m-%d %H:%M:%S'), user, "\ucd9c\uadfcNN", "", "", "", "\uc0ac\uc720\uc5c6\uc74c", ""])
+                nn_records.append([ts_out.strftime('%Y-%m-%d %H:%M:%S'), user, "\ud1f4\uadfcNN", "", "", "\uc0ac\uc720\uc5c6\uc74c", "", ""])
+        if today.weekday() < 5:
+            day_records = user_df[user_df['date_obj'] == today]
+            if not day_records.empty:
+                types = day_records[col_type].unique()
+                has_in = "\ucd9c\uadfc" in types or "\uc9c0\uac01" in types
+                has_out = "\ud1f4\uadfc" in types or "\uc870\ud1f4" in types
+                has_absent = "\uacb0\uadfc" in types
+                has_in_nn = "\ucd9c\uadfcNN" in types
+                if not has_absent and not has_in and has_out and current_hour >= 18 and not has_in_nn:
+                    ts = datetime.combine(today, datetime.min.time().replace(hour=18, minute=0))
+                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, "\ucd9c\uadfcNN", "", "", "", "\uc0ac\uc720\uc5c6\uc74c", ""])
+    if nn_records:
+        for record in nn_records:
+            sheet.append_row(record)
+        clear_attendance_cache()
+
 # --- 출결 기록 확인 페이지 ---
 def view_records_page():
     st.markdown("""
@@ -157,6 +222,7 @@ def view_records_page():
 
     try:
         sheet = get_sheet()
+        process_nn_records(sheet)
         data = get_cached_records(sheet)
         
         if data and len(data) > 1:
@@ -252,8 +318,13 @@ def view_records_page():
                         in_time = out_time = ""
                         notes = []
                         has_work = False
+                        has_in_nn = has_out_nn = False
                         if "출근" in types:
                             in_time = grp[grp[col_type]=="출근"]['dt'].min().strftime("%H:%M")
+                            has_work = True
+                        elif "출근NN" in types:
+                            in_time = "NN"
+                            has_in_nn = True
                             has_work = True
                         if "지각" in types:
                             late_rows = grp[grp[col_type]=="지각"]
@@ -274,6 +345,9 @@ def view_records_page():
                             has_work = True
                         if "퇴근" in types:
                             out_time = grp[grp[col_type]=="퇴근"]['dt'].max().strftime("%H:%M")
+                        elif "퇴근NN" in types:
+                            out_time = "NN"
+                            has_out_nn = True
                         if "조퇴" in types:
                             early_rows = grp[grp[col_type]=="조퇴"]
                             is_excused = False
@@ -301,11 +375,38 @@ def view_records_page():
                             if not reason_txt or reason_txt.lower() in ["nan","none",""]:
                                 reason_txt = "사유없음"
                             notes.append(f"결근({reason_txt})")
+                        if has_in_nn:
+                            late_cnt += 1
+                            nn_reason = ""
+                            nn_rows = grp[grp[col_type]=="출근NN"]
+                            if not nn_rows.empty:
+                                r = nn_rows.iloc[0]
+                                if len(r) > 6:
+                                    nn_reason = str(r.iloc[6]) if pd.notna(r.iloc[6]) else "사유없음"
+                            if not nn_reason or nn_reason.lower() in ["nan","none",""]:
+                                nn_reason = "사유없음"
+                            notes.insert(0, f"지각({nn_reason})")
+                        if has_out_nn:
+                            early_cnt += 1
+                            nn_reason = ""
+                            nn_rows = grp[grp[col_type]=="퇴근NN"]
+                            if not nn_rows.empty:
+                                r = nn_rows.iloc[0]
+                                if len(r) > 5:
+                                    nn_reason = str(r.iloc[5]) if pd.notna(r.iloc[5]) else "사유없음"
+                            if not nn_reason or nn_reason.lower() in ["nan","none",""]:
+                                nn_reason = "사유없음"
+                            notes.append(f"조퇴({nn_reason})")
+                        if has_in_nn and has_out_nn:
+                            late_cnt -= 1
+                            early_cnt -= 1
+                            absent_cnt += 1
+                            notes = ["결근(사유없음)"]
                         if in_time:
                             parts.append(f"출근: {in_time}")
                         if out_time:
                             parts.append(f"퇴근: {out_time}")
-                        elif has_work and "결근" not in types:
+                        elif has_work and "결근" not in types and not has_out_nn:
                             parts.append("퇴근: NN")
                         if notes:
                             parts.append(", ".join(notes))
@@ -418,8 +519,13 @@ def view_main_page():
             st.success(f"**{name}**님 안녕하세요! 👋")
         
         # 결근 버튼 (위치 무관)
-        if st.button("🙅 결근 통보 (위치 무관)", use_container_width=True):
-            show_absent_dialog(name)
+        is_absent = check_is_absent_today(get_sheet(), name)
+        if is_absent:
+            st.button("🙅 결근 통보 (위치 무관)", disabled=True, use_container_width=True)
+            st.info("이미 오늘 결근 기록이 있습니다.")
+        else:
+            if st.button("🙅 결근 통보 (위치 무관)", use_container_width=True):
+                show_absent_dialog(name)
 
     # 위치 확인 및 출결 로직
     loc = get_geolocation()

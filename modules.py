@@ -65,3 +65,22 @@ def check_is_clocked_out(sheet, name):
     except Exception as e:
         print(f"Error checking clocked out: {e}")
         return False
+
+def check_is_absent_today(sheet, name):
+    """ 특정 사용자가 오늘 날짜(KST 기준)에 '결근' 기록을 남겼는지 확인하는 함수 """
+    try:
+        all_records = get_cached_records(sheet)
+        kst = pytz.timezone('Asia/Seoul')
+        today_date = datetime.now(kst).strftime('%Y-%m-%d')
+        for row in all_records:
+            if len(row) < 3:
+                continue
+            timestamp_str = row[0]
+            record_name = row[1]
+            record_type = row[2]
+            if timestamp_str.startswith(today_date) and record_name == name and record_type == "결근":
+                return True
+        return False
+    except Exception as e:
+        print(f"Error checking absent: {e}")
+        return False
