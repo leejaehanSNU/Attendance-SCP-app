@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 import pytz
 from modules import *
+from io import BytesIO
+from openpyxl.styles import Alignment
 
 LAB_LAT = 37.456461 
 LAB_LON = 126.952096 
@@ -249,8 +251,10 @@ def view_records_page():
                         parts = []
                         in_time = out_time = ""
                         notes = []
+                        has_work = False
                         if "출근" in types:
                             in_time = grp[grp[col_type]=="출근"]['dt'].min().strftime("%H:%M")
+                            has_work = True
                         if "지각" in types:
                             late_rows = grp[grp[col_type]=="지각"]
                             is_excused = False
@@ -261,10 +265,13 @@ def view_records_page():
                                     reason_txt = r_val
                                     if "[업무]" in r_val:
                                         is_excused = True
+                            if not reason_txt or reason_txt.lower() in ["nan","none",""]:
+                                reason_txt = "사유없음"
                             if not is_excused:
                                 late_cnt += 1
                             in_time = grp[grp[col_type]=="지각"]['dt'].min().strftime("%H:%M")
                             notes.append(f"지각({reason_txt})" if not is_excused else f"지각(업무:{reason_txt})")
+                            has_work = True
                         if "퇴근" in types:
                             out_time = grp[grp[col_type]=="퇴근"]['dt'].max().strftime("%H:%M")
                         if "조퇴" in types:
@@ -277,6 +284,8 @@ def view_records_page():
                                     reason_txt = r_val
                                     if "[업무]" in r_val:
                                         is_excused = True
+                            if not reason_txt or reason_txt.lower() in ["nan","none",""]:
+                                reason_txt = "사유없음"
                             if not is_excused:
                                 early_cnt += 1
                             out_time = grp[grp[col_type]=="조퇴"]['dt'].max().strftime("%H:%M")
@@ -289,11 +298,15 @@ def view_records_page():
                                 r = abs_rows.iloc[0]
                                 if len(r) > 7:
                                     reason_txt = str(r.iloc[7]) if pd.notna(r.iloc[7]) else ""
+                            if not reason_txt or reason_txt.lower() in ["nan","none",""]:
+                                reason_txt = "사유없음"
                             notes.append(f"결근({reason_txt})")
                         if in_time:
                             parts.append(f"출근: {in_time}")
                         if out_time:
                             parts.append(f"퇴근: {out_time}")
+                        elif has_work and "결근" not in types:
+                            parts.append("퇴근: NN")
                         if notes:
                             parts.append(", ".join(notes))
                         day_status_map[d_date] = ", ".join(parts)
@@ -308,19 +321,25 @@ def view_records_page():
                 
                 if report_data:
                     rep_df = pd.DataFrame(report_data)
-                    csv = rep_df.to_csv(index=False).encode('utf-8-sig')
-                    
-                    col_d1, col_d2 = st.columns([1,2])
-                    with col_d1:
-                        st.download_button(
-                            label="💾 CSV 파일 다운로드",
-                            data=csv,
-                            file_name=f"출결현황_{today.year}_{today.month}월.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    with col_d2:
-                        st.caption("※ 엑셀에서 열 때 글자가 깨지면 '데이터 > 텍스트/CSV'로 불러오세요 (UTF-8-SIG 인코딩 사용됨)")
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        rep_df.to_excel(writer, index=False, sheet_name='출결현황')
+                        worksheet = writer.sheets['출결현황']
+                        worksheet.column_dimensions['A'].width = 20
+                        worksheet.column_dimensions['B'].width = 25
+                        for col in range(3, len(rep_df.columns) + 1):
+                            worksheet.column_dimensions[worksheet.cell(1, col).column_letter].width = 35
+                        for row in worksheet.iter_rows(min_row=2, max_row=len(rep_df)+1):
+                            for cell in row:
+                                cell.alignment = Alignment(wrap_text=True, vertical='top')
+                    buffer.seek(0)
+                    st.download_button(
+                        label="💾 Excel 파일 다운로드",
+                        data=buffer,
+                        file_name=f"출결현황_{today.year}_{today.month}월.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
                 else:
                     st.info("데이터가 없습니다.")
 
