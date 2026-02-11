@@ -240,22 +240,19 @@ def view_records_page():
 
                 for u in all_users:
                     u_df = month_df[month_df[col_name] == u]
-                    
-                    late_cnt = 0
-                    early_cnt = 0
-                    absent_cnt = 0
+                    late_cnt = early_cnt = absent_cnt = 0
                     day_status_map = {}
                     u_df['date_obj'] = u_df['dt'].dt.date
                     grouped = u_df.groupby('date_obj')
-                    
                     for d_date, grp in grouped:
                         types = grp[col_type].unique()
-                        cell_texts = []
-                        # 카운팅 로직 (업무 포함 여부 체크)
-                        # 1. 지각
+                        parts = []
+                        in_time = out_time = ""
+                        notes = []
+                        if "출근" in types:
+                            in_time = grp[grp[col_type]=="출근"]['dt'].min().strftime("%H:%M")
                         if "지각" in types:
-                            # 사유 체크
-                            late_rows = grp[grp[col_type] == "지각"]
+                            late_rows = grp[grp[col_type]=="지각"]
                             is_excused = False
                             reason_txt = ""
                             for _, r in late_rows.iterrows():
@@ -264,14 +261,14 @@ def view_records_page():
                                     reason_txt = r_val
                                     if "[업무]" in r_val:
                                         is_excused = True
-                            if is_excused:
-                                cell_texts.append(f"지각(업무:{reason_txt})")
-                            else:
+                            if not is_excused:
                                 late_cnt += 1
-                                cell_texts.append(f"지각({reason_txt})")
-                        # 2. 조퇴
+                            in_time = grp[grp[col_type]=="지각"]['dt'].min().strftime("%H:%M")
+                            notes.append(f"지각({reason_txt})" if not is_excused else f"지각(업무:{reason_txt})")
+                        if "퇴근" in types:
+                            out_time = grp[grp[col_type]=="퇴근"]['dt'].max().strftime("%H:%M")
                         if "조퇴" in types:
-                            early_rows = grp[grp[col_type] == "조퇴"]
+                            early_rows = grp[grp[col_type]=="조퇴"]
                             is_excused = False
                             reason_txt = ""
                             for _, r in early_rows.iterrows():
@@ -280,33 +277,26 @@ def view_records_page():
                                     reason_txt = r_val
                                     if "[업무]" in r_val:
                                         is_excused = True
-                            
-                            if is_excused:
-                                cell_texts.append(f"조퇴(업무:{reason_txt})")
-                            else:
+                            if not is_excused:
                                 early_cnt += 1
-                                cell_texts.append(f"조퇴({reason_txt})")
-                        
-                        # 3. 결근
+                            out_time = grp[grp[col_type]=="조퇴"]['dt'].max().strftime("%H:%M")
+                            notes.append(f"조퇴({reason_txt})" if not is_excused else f"조퇴(업무:{reason_txt})")
                         if "결근" in types:
                             absent_cnt += 1
-                            # 사유
-                            abs_rows = grp[grp[col_type] == "결근"]
+                            abs_rows = grp[grp[col_type]=="결근"]
                             reason_txt = ""
                             if not abs_rows.empty:
                                 r = abs_rows.iloc[0]
                                 if len(r) > 7:
                                     reason_txt = str(r.iloc[7]) if pd.notna(r.iloc[7]) else ""
-                            cell_texts.append(f"결근({reason_txt})")
-                        
-                        # 4. 정상 출근 표시 (지각/결근 없을 때만 혹은 같이 표시?)
-                        if "출근" in types and "지각" not in types:
-                             # 출근 시간
-                             t = grp[grp[col_type]=="출근"]['dt'].min().strftime("%H:%M")
-                             cell_texts.append(f"{t} 출근")
-                        day_status_map[d_date] = "\n".join(cell_texts)
-
-                    # Row 생성
+                            notes.append(f"결근({reason_txt})")
+                        if in_time:
+                            parts.append(f"출근: {in_time}")
+                        if out_time:
+                            parts.append(f"퇴근: {out_time}")
+                        if notes:
+                            parts.append(", ".join(notes))
+                        day_status_map[d_date] = ", ".join(parts)
                     row = {
                         "이름": u,
                         "현황": f"결근:{absent_cnt}, 지각:{late_cnt}, 조퇴:{early_cnt}"
