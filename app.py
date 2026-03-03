@@ -18,6 +18,12 @@ ALLOWED_RADIUS_M = 100
 st.set_page_config(page_title="출결 체크", page_icon="📍", initial_sidebar_state="collapsed")
 if 'current_view' not in st.session_state:
     st.session_state['current_view'] = 'main'
+if 'show_late_dialog' not in st.session_state:
+    st.session_state['show_late_dialog'] = False
+if 'show_early_leave_dialog' not in st.session_state:
+    st.session_state['show_early_leave_dialog'] = False
+if 'show_absent_dialog' not in st.session_state:
+    st.session_state['show_absent_dialog'] = False
 
 def set_view(view_name):
     st.session_state['current_view'] = view_name
@@ -50,7 +56,8 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
                 sheet.append_row([now, name, "조퇴", f"{user_lat},{user_lon}", f"{distance:.1f}m", reason.strip()])
                 clear_attendance_cache()
                 st.success(f"{name}님 {now} 조퇴 기록 완료!")
-                st.session_state['force_rerun'] = True 
+                st.balloons()
+                st.session_state['show_early_leave_dialog'] = False
                 time.sleep(1.5)
                 st.rerun()
             except Exception as e:
@@ -58,6 +65,7 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
                 st.code(traceback.format_exc())
     with col_n:
         if st.button("아니오"):
+            st.session_state['show_early_leave_dialog'] = False
             st.rerun()
 
 @dlg("지각 확인")
@@ -84,7 +92,8 @@ def show_late_dialog(name, user_lat, user_lon, distance):
                 sheet.append_row([now, name, "지각", f"{user_lat},{user_lon}", f"{distance:.1f}m", "", reason.strip()])
                 clear_attendance_cache()
                 st.success(f"{name}님 {now} 지각 기록 완료!")
-                st.session_state['force_rerun'] = True 
+                st.balloons()
+                st.session_state['show_late_dialog'] = False
                 time.sleep(1.5)
                 st.rerun()
             except Exception as e:
@@ -92,6 +101,7 @@ def show_late_dialog(name, user_lat, user_lon, distance):
                 st.code(traceback.format_exc())
     with col_n:
         if st.button("아니오"):
+            st.session_state['show_late_dialog'] = False
             st.rerun()
 
 @dlg("결근 확인")
@@ -117,7 +127,8 @@ def show_absent_dialog(name):
                 sheet.append_row([now, name, "결근", "", "", "", "", reason.strip()])
                 clear_attendance_cache()
                 st.success(f"{name}님 {now} 결근 기록 완료!")
-                st.session_state['force_rerun'] = True 
+                st.balloons()
+                st.session_state['show_absent_dialog'] = False
                 time.sleep(1.5)
                 st.rerun()
             except Exception as e:
@@ -125,6 +136,7 @@ def show_absent_dialog(name):
                 st.code(traceback.format_exc())
     with col_n:
         if st.button("취소"):
+            st.session_state['show_absent_dialog'] = False
             st.rerun()
 
 @dlg("출결 인원 선택")
@@ -525,7 +537,12 @@ def view_main_page():
             st.info("이미 오늘 결근 기록이 있습니다.")
         else:
             if st.button("🙅 결근 통보 (위치 무관)", use_container_width=True):
+                st.session_state['show_absent_dialog'] = True
+                st.rerun()
+            
+            if st.session_state.get('show_absent_dialog'):
                 show_absent_dialog(name)
+                st.session_state['show_absent_dialog'] = False
 
     # 위치 확인 및 출결 로직
     loc = get_geolocation()
@@ -557,30 +574,15 @@ def view_main_page():
                         if not name:
                             st.warning("이름을 입력해주세요.")
                         else:
-                            try:
-                                kst = pytz.timezone('Asia/Seoul')
-                                now_dt = datetime.now(kst)
-                                now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
-                                if now_dt.hour >= 10:
-                                    # 지각 시 팝업 띄우기
-                                    show_late_dialog(name, user_lat, user_lon, distance)
-                                else:
-                                    sheet = get_sheet()
-                                    sheet.append_row([now, name, "출근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
-                                    clear_attendance_cache()
-                                    st.balloons()
-                                    st.success(f"{name}님 {now} 출근 기록 완료!")
-                                    st.session_state['force_rerun'] = True
-                                    time.sleep(1.5)
-                                    st.rerun()
-                            except Exception as e:
-                                import traceback
-                                st.code(traceback.format_exc())
-                                st.stop()
-                            finally:
-                                st.session_state['force_rerun'] = True
-                                time.sleep(1.5)
-                                st.rerun()
+                            st.session_state['show_late_dialog'] = True
+                            st.rerun()
+                    
+                    if st.session_state.get('show_late_dialog'):
+                        kst = pytz.timezone('Asia/Seoul')
+                        now_dt = datetime.now(kst)
+                        if now_dt.hour >= 10:
+                            show_late_dialog(name, user_lat, user_lon, distance)
+                        st.session_state['show_late_dialog'] = False
 
             with col2:
                 if is_out:
@@ -591,25 +593,15 @@ def view_main_page():
                         if not name:
                             st.warning("이름을 입력해주세요.")
                         else:
-                            kst = pytz.timezone('Asia/Seoul')
-                            now_dt = datetime.now(kst)
-                            if now_dt.hour < 18:
-                                show_early_leave_dialog(name, user_lat, user_lon, distance)
-                            else:
-                                try:
-                                    sheet = get_sheet()
-                                    now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
-                                    sheet.append_row([now, name, "퇴근", f"{user_lat},{user_lon}", f"{distance:.1f}m"])
-                                    clear_attendance_cache()
-                                    st.success(f"{name}님 {now} 퇴근 기록 완료!")
-                                except Exception as e:
-                                    import traceback
-                                    st.code(traceback.format_exc())
-                                    st.stop()
-                                finally:
-                                    st.session_state['force_rerun'] = True
-                                    time.sleep(1.5)
-                                    st.rerun()
+                            st.session_state['show_early_leave_dialog'] = True
+                            st.rerun()
+                    
+                    if st.session_state.get('show_early_leave_dialog'):
+                        kst = pytz.timezone('Asia/Seoul')
+                        now_dt = datetime.now(kst)
+                        if now_dt.hour < 18:
+                            show_early_leave_dialog(name, user_lat, user_lon, distance)
+                        st.session_state['show_early_leave_dialog'] = False
         else:
             st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
         
