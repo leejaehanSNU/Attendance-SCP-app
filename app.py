@@ -574,14 +574,30 @@ def view_main_page():
                         if not name:
                             st.warning("이름을 입력해주세요.")
                         else:
-                            st.session_state['show_late_dialog'] = True
-                            st.rerun()
+                            kst = pytz.timezone('Asia/Seoul')
+                            now_dt = datetime.now(kst)
+                            if now_dt.hour >= 10:
+                                # 10시 이후 -> 지각 다이얼로그
+                                st.session_state['show_late_dialog'] = True
+                                st.rerun()
+                            else:
+                                # 10시 이전 -> 정상 출근 바로 기록
+                                try:
+                                    sheet = get_sheet()
+                                    now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
+                                    sheet.append_row([now, name, "출근", f"{user_lat},{user_lon}", f"{distance:.1f}m", "", "", ""])
+                                    clear_attendance_cache()
+                                    st.success(f"{name}님 {now} 출근 기록 완료!")
+                                    st.balloons()
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    import traceback
+                                    st.error(f"출근 기록 오류: {e}")
+                                    st.code(traceback.format_exc())
                     
                     if st.session_state.get('show_late_dialog'):
-                        kst = pytz.timezone('Asia/Seoul')
-                        now_dt = datetime.now(kst)
-                        if now_dt.hour >= 10:
-                            show_late_dialog(name, user_lat, user_lon, distance)
+                        show_late_dialog(name, user_lat, user_lon, distance)
                         st.session_state['show_late_dialog'] = False
 
             with col2:
@@ -593,14 +609,30 @@ def view_main_page():
                         if not name:
                             st.warning("이름을 입력해주세요.")
                         else:
-                            st.session_state['show_early_leave_dialog'] = True
-                            st.rerun()
+                            kst = pytz.timezone('Asia/Seoul')
+                            now_dt = datetime.now(kst)
+                            if now_dt.hour < 18:
+                                # 18시 이전 -> 조퇴 다이얼로그
+                                st.session_state['show_early_leave_dialog'] = True
+                                st.rerun()
+                            else:
+                                # 18시 이후 -> 정상 퇴근 바로 기록
+                                try:
+                                    sheet = get_sheet()
+                                    now = now_dt.strftime('%Y-%m-%d %H:%M:%S')
+                                    sheet.append_row([now, name, "퇴근", f"{user_lat},{user_lon}", f"{distance:.1f}m", "", "", ""])
+                                    clear_attendance_cache()
+                                    st.success(f"{name}님 {now} 퇴근 기록 완료!")
+                                    st.balloons()
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    import traceback
+                                    st.error(f"퇴근 기록 오류: {e}")
+                                    st.code(traceback.format_exc())
                     
                     if st.session_state.get('show_early_leave_dialog'):
-                        kst = pytz.timezone('Asia/Seoul')
-                        now_dt = datetime.now(kst)
-                        if now_dt.hour < 18:
-                            show_early_leave_dialog(name, user_lat, user_lon, distance)
+                        show_early_leave_dialog(name, user_lat, user_lon, distance)
                         st.session_state['show_early_leave_dialog'] = False
         else:
             st.error(f"🚫 연구실 반경 {ALLOWED_RADIUS_M}m 밖입니다. 출퇴근을 기록할 수 없습니다.")
