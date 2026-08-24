@@ -14,6 +14,9 @@ from openpyxl.styles import Alignment, Border, Side, PatternFill
 LAB_LAT = 37.456461 
 LAB_LON = 126.952096 
 ALLOWED_RADIUS_M = 100 
+UNAUTHORIZED_OUT = str().join(map(chr, (47924, 45800, 32, 53748, 44540)))
+UNAUTHORIZED_ABSENT = str().join(map(chr, (47924, 45800, 32, 44208, 44540)))
+UNAUTHORIZED_LATE = str().join(map(chr, (47924, 45800, 32, 51648, 44033)))
 
 st.set_page_config(page_title="출결 체크", page_icon="📍", initial_sidebar_state="collapsed")
 if 'current_view' not in st.session_state:
@@ -177,6 +180,8 @@ def process_nn_records(sheet):
             date_obj = check_date.date()
             if date_obj.weekday() >= 5:
                 continue
+            # Do not retroactively alter records from before this rule was deployed.
+            continue
             day_records = user_df[user_df['date_obj'] == date_obj]
             if day_records.empty:
                 continue
@@ -201,6 +206,23 @@ def process_nn_records(sheet):
                 nn_records.append([ts_out.strftime('%Y-%m-%d %H:%M:%S'), user, "\ud1f4\uadfcNN", "", "", "\uc0ac\uc720\uc5c6\uc74c", "", ""])
         if today.weekday() < 5:
             day_records = user_df[user_df['date_obj'] == today]
+            if current_hour >= 18:
+                types = day_records[col_type].unique() if not day_records.empty else []
+                if (UNAUTHORIZED_ABSENT in types or UNAUTHORIZED_OUT in types
+                        or UNAUTHORIZED_LATE in types):
+                    continue
+                if check_is_absent_today(sheet, user):
+                    continue
+                if day_records.empty:
+                    ts = datetime.combine(today, datetime.min.time().replace(hour=23, minute=59))
+                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, UNAUTHORIZED_ABSENT, str(), str(), str(), str(), str()])
+                elif check_is_clocked_in(sheet, user) and not check_is_clocked_out(sheet, user):
+                    ts = datetime.combine(today, datetime.min.time().replace(hour=23, minute=59))
+                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, UNAUTHORIZED_OUT, str(), str(), str(), str(), str()])
+                elif not check_is_clocked_in(sheet, user) and check_is_clocked_out(sheet, user):
+                    ts = datetime.combine(today, datetime.min.time().replace(hour=18, minute=0))
+                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, UNAUTHORIZED_LATE, str(), str(), str(), str(), str()])
+                continue
             if not day_records.empty:
                 types = day_records[col_type].unique()
                 has_in = "\ucd9c\uadfc" in types or "\uc9c0\uac01" in types
@@ -414,6 +436,16 @@ def view_records_page():
                             early_cnt -= 1
                             absent_cnt += 1
                             notes = ["결근(사유없음)"]
+                        if UNAUTHORIZED_ABSENT in types:
+                            absent_cnt += 1
+                            notes = [UNAUTHORIZED_ABSENT + chr(40) + chr(78) + chr(78) + chr(41)]
+                        if UNAUTHORIZED_LATE in types:
+                            late_cnt += 1
+                            notes.insert(0, UNAUTHORIZED_LATE + chr(40) + chr(78) + chr(78) + chr(41))
+                        if UNAUTHORIZED_OUT in types:
+                            early_cnt += 1
+                            out_time = chr(78) + chr(78)
+                            notes.append(UNAUTHORIZED_OUT + chr(40) + chr(78) + chr(78) + chr(41))
                         if in_time:
                             parts.append(f"출근: {in_time}")
                         if out_time:
