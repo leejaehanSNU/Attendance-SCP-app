@@ -5,20 +5,30 @@ from google.oauth2.service_account import Credentials
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+from threading import Lock
 import pytz
 from modules import *
+from attendance_rules import (
+    UNAUTHORIZED_ABSENT,
+    UNAUTHORIZED_LATE,
+    UNAUTHORIZED_OUT,
+    unauthorized_status_for,
+    work_dates_to_close,
+)
 from io import BytesIO
 from openpyxl.styles import Alignment, Border, Side, PatternFill
 
 LAB_LAT = 37.456461 
 LAB_LON = 126.952096 
 ALLOWED_RADIUS_M = 100 
-UNAUTHORIZED_OUT = str().join(map(chr, (47924, 45800, 32, 53748, 44540)))
-UNAUTHORIZED_ABSENT = str().join(map(chr, (47924, 45800, 32, 44208, 44540)))
-UNAUTHORIZED_LATE = str().join(map(chr, (47924, 45800, 32, 51648, 44033)))
 
 st.set_page_config(page_title="출결 체크", page_icon="📍", initial_sidebar_state="collapsed")
+
+@st.cache_resource
+def get_auto_record_lock():
+    return Lock()
+
 if 'current_view' not in st.session_state:
     st.session_state['current_view'] = 'main'
 if 'show_late_dialog' not in st.session_state:
@@ -156,86 +166,73 @@ def show_name_selection_dialog(user_list):
 def process_nn_records(sheet):
     kst = pytz.timezone('Asia/Seoul')
     now_kst = datetime.now(kst)
-    today = now_kst.date()
-    current_hour = now_kst.hour
-    data = get_cached_records(sheet)
-    if not data or len(data) < 2:
-        return
-    headers = data[0]
-    df = pd.DataFrame(data[1:], columns=headers)
-    col_ts = headers[0]
-    col_name = headers[1]
-    col_type = headers[2]
-    df['dt'] = pd.to_datetime(df[col_ts], errors='coerce')
-    df = df.dropna(subset=['dt'])
     if "user_names" in st.secrets:
-        all_users = st.secrets["user_names"]
+        all_users = list(st.secrets["user_names"])
     else:
         return
-    nn_records = []
-    for user in all_users:
-        user_df = df[df[col_name] == user].copy()
-        user_df['date_obj'] = user_df['dt'].dt.date
-        for check_date in pd.date_range(start=today - timedelta(days=30), end=today - timedelta(days=1)):
-            date_obj = check_date.date()
-            if date_obj.weekday() >= 5:
-                continue
-            # Do not retroactively alter records from before this rule was deployed.
-            continue
-            day_records = user_df[user_df['date_obj'] == date_obj]
-            if day_records.empty:
-                continue
-            types = day_records[col_type].unique()
-            has_in = "\ucd9c\uadfc" in types or "\uc9c0\uac01" in types
-            has_out = "\ud1f4\uadfc" in types or "\uc870\ud1f4" in types
-            has_absent = "\uacb0\uadfc" in types
-            has_in_nn = "\ucd9c\uadfcNN" in types
-            has_out_nn = "\ud1f4\uadfcNN" in types
-            if has_absent:
-                continue
-            if has_in and not has_out and not has_out_nn:
-                ts = datetime.combine(date_obj, datetime.min.time().replace(hour=23, minute=59))
-                nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, "\ud1f4\uadfcNN", "", "", "\uc0ac\uc720\uc5c6\uc74c", "", ""])
-            elif not has_in and has_out and not has_in_nn:
-                ts = datetime.combine(date_obj, datetime.min.time().replace(hour=18, minute=0))
-                nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, "\ucd9c\uadfcNN", "", "", "", "\uc0ac\uc720\uc5c6\uc74c", ""])
-            elif not has_in and not has_out and not has_in_nn and not has_out_nn:
-                ts_in = datetime.combine(date_obj, datetime.min.time().replace(hour=18, minute=0))
-                ts_out = datetime.combine(date_obj, datetime.min.time().replace(hour=23, minute=59))
-                nn_records.append([ts_in.strftime('%Y-%m-%d %H:%M:%S'), user, "\ucd9c\uadfcNN", "", "", "", "\uc0ac\uc720\uc5c6\uc74c", ""])
-                nn_records.append([ts_out.strftime('%Y-%m-%d %H:%M:%S'), user, "\ud1f4\uadfcNN", "", "", "\uc0ac\uc720\uc5c6\uc74c", "", ""])
-        if today.weekday() < 5:
-            day_records = user_df[user_df['date_obj'] == today]
-            if current_hour >= 18:
-                types = day_records[col_type].unique() if not day_records.empty else []
-                if (UNAUTHORIZED_ABSENT in types or UNAUTHORIZED_OUT in types
-                        or UNAUTHORIZED_LATE in types):
+
+    # Streamlit can rerun this page concurrently for several viewers. Serialize
+    # the fresh read, decision, and append so one process cannot add duplicates.
+    with get_auto_record_lock():
+        data = sheet.get_all_values()
+        if not data:
+            return
+
+        headers = data[0]
+        if len(headers) < 3:
+            return
+
+        rows = []
+        for row in data[1:]:
+            normalized = row[:len(headers)] + [''] * max(0, len(headers) - len(row))
+            rows.append(normalized)
+
+        df = pd.DataFrame(rows, columns=headers)
+        col_ts, col_name, col_type = headers[:3]
+        df['dt'] = pd.to_datetime(df[col_ts], errors='coerce')
+        df = df.dropna(subset=['dt'])
+        df['date_obj'] = df['dt'].dt.date
+
+        nn_records = []
+        for date_obj in work_dates_to_close(now_kst):
+            date_records = df[df['date_obj'] == date_obj]
+            for user in all_users:
+                types = date_records.loc[
+                    date_records[col_name] == user, col_type
+                ].tolist()
+                status = unauthorized_status_for(types)
+                if status is None:
                     continue
-                if check_is_absent_today(sheet, user):
+
+                ts = datetime.combine(
+                    date_obj,
+                    datetime.min.time().replace(hour=23, minute=59),
+                )
+                nn_records.append([
+                    ts.strftime('%Y-%m-%d %H:%M:%S'), user, status,
+                    '', '', '', '', '',
+                ])
+
+        if nn_records:
+            # Recheck immediately before writing. This also protects against a
+            # second app process that appended while this process was deciding.
+            latest_rows = sheet.get_all_values()[1:]
+            latest_types = {}
+            for row in latest_rows:
+                if len(row) < 3:
                     continue
-                if day_records.empty:
-                    ts = datetime.combine(today, datetime.min.time().replace(hour=23, minute=59))
-                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, UNAUTHORIZED_ABSENT, str(), str(), str(), str(), str()])
-                elif check_is_clocked_in(sheet, user) and not check_is_clocked_out(sheet, user):
-                    ts = datetime.combine(today, datetime.min.time().replace(hour=23, minute=59))
-                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, UNAUTHORIZED_OUT, str(), str(), str(), str(), str()])
-                elif not check_is_clocked_in(sheet, user) and check_is_clocked_out(sheet, user):
-                    ts = datetime.combine(today, datetime.min.time().replace(hour=18, minute=0))
-                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, UNAUTHORIZED_LATE, str(), str(), str(), str(), str()])
-                continue
-            if not day_records.empty:
-                types = day_records[col_type].unique()
-                has_in = "\ucd9c\uadfc" in types or "\uc9c0\uac01" in types
-                has_out = "\ud1f4\uadfc" in types or "\uc870\ud1f4" in types
-                has_absent = "\uacb0\uadfc" in types
-                has_in_nn = "\ucd9c\uadfcNN" in types
-                if not has_absent and not has_in and has_out and current_hour >= 18 and not has_in_nn:
-                    ts = datetime.combine(today, datetime.min.time().replace(hour=18, minute=0))
-                    nn_records.append([ts.strftime('%Y-%m-%d %H:%M:%S'), user, "\ucd9c\uadfcNN", "", "", "", "\uc0ac\uc720\uc5c6\uc74c", ""])
-    if nn_records:
-        for record in nn_records:
-            sheet.append_row(record)
-        clear_attendance_cache()
+                key = (row[0][:10], row[1])
+                latest_types.setdefault(key, set()).add(row[2])
+            nn_records = [
+                record for record in nn_records
+                if unauthorized_status_for(
+                    latest_types.get((record[0][:10], record[1]), set())
+                ) == record[2]
+            ]
+
+        if nn_records:
+            sheet.append_rows(nn_records, value_input_option='RAW')
+            clear_attendance_cache()
 
 # --- 출결 기록 확인 페이지 ---
 def view_records_page():
