@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
@@ -10,9 +11,12 @@ from threading import Lock
 import pytz
 from modules import *
 from attendance_rules import (
+    AUTO_TYPES,
     UNAUTHORIZED_ABSENT,
     UNAUTHORIZED_LATE,
     UNAUTHORIZED_OUT,
+    has_real_attendance,
+    is_workday,
     unauthorized_status_for,
     work_dates_to_close,
 )
@@ -41,6 +45,18 @@ if 'show_absent_dialog' not in st.session_state:
 def set_view(view_name):
     st.session_state['current_view'] = view_name
     st.rerun()
+
+
+def show_attendance_write_error(action, error):
+    response = getattr(error, 'response', None)
+    status_code = getattr(response, 'status_code', None)
+    if isinstance(error, APIError) and status_code == 403:
+        st.error(
+            f'{action} 기록 실패: Google 시트 편집 권한이 없습니다. '
+            '관리자에게 문의해주세요.'
+        )
+    else:
+        st.error(f'{action} 기록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
 
 # --- 다이얼로그 및 헬퍼 함수 ---
 if hasattr(st, "dialog"): dlg = st.dialog
@@ -74,8 +90,7 @@ def show_early_leave_dialog(name, user_lat, user_lon, distance):
                 time.sleep(1.5)
                 st.rerun()
             except Exception as e:
-                import traceback
-                st.code(traceback.format_exc())
+                show_attendance_write_error('조퇴', e)
     with col_n:
         if st.button("아니오"):
             st.session_state['show_early_leave_dialog'] = False
@@ -110,8 +125,7 @@ def show_late_dialog(name, user_lat, user_lon, distance):
                 time.sleep(1.5)
                 st.rerun()
             except Exception as e:
-                import traceback
-                st.code(traceback.format_exc())
+                show_attendance_write_error('지각', e)
     with col_n:
         if st.button("아니오"):
             st.session_state['show_late_dialog'] = False
@@ -145,8 +159,7 @@ def show_absent_dialog(name):
                 time.sleep(1.5)
                 st.rerun()
             except Exception as e:
-                import traceback
-                st.code(traceback.format_exc())
+                show_attendance_write_error('결근', e)
     with col_n:
         if st.button("취소"):
             st.session_state['show_absent_dialog'] = False
@@ -196,6 +209,10 @@ def process_nn_records(sheet):
         nn_records = []
         for date_obj in work_dates_to_close(now_kst):
             date_records = df[df['date_obj'] == date_obj]
+            # A day with no actual check-in/out/absence at all is treated as a
+            # lab closure, not as a day when everyone was absent.
+            if not has_real_attendance(date_records[col_type].tolist()):
+                continue
             for user in all_users:
                 types = date_records.loc[
                     date_records[col_name] == user, col_type
@@ -268,6 +285,15 @@ def view_records_page():
             
             df['dt'] = pd.to_datetime(df[col_ts], errors='coerce')
             df = df.dropna(subset=['dt'])
+
+            # Keep the sheet intact, but hide automatic rows that were created
+            # on public holidays by older versions of the closing logic.
+            record_dates = df['dt'].dt.date
+            invalid_auto_rows = (
+                df[col_type].isin(AUTO_TYPES)
+                & ~record_dates.map(is_workday)
+            )
+            df = df[~invalid_auto_rows].copy()
             
             kst = pytz.timezone('Asia/Seoul')
             now_kst = datetime.now(kst)
@@ -331,7 +357,7 @@ def view_records_page():
                 
                 for d in range(1, last_day + 1):
                     curr_date = datetime(today.year, today.month, d).date()
-                    if curr_date.weekday() < 5: # 0(월)~4(금)
+                    if is_workday(curr_date):
                         valid_dates.append(curr_date)
                         valid_date_cols.append(f"{d}일")
 
@@ -621,9 +647,7 @@ def view_main_page():
                                     time.sleep(1.5)
                                     st.rerun()
                                 except Exception as e:
-                                    import traceback
-                                    st.error(f"출근 기록 오류: {e}")
-                                    st.code(traceback.format_exc())
+                                    show_attendance_write_error('출근', e)
                     
                     if st.session_state.get('show_late_dialog'):
                         show_late_dialog(name, user_lat, user_lon, distance)
@@ -656,9 +680,7 @@ def view_main_page():
                                     time.sleep(1.5)
                                     st.rerun()
                                 except Exception as e:
-                                    import traceback
-                                    st.error(f"퇴근 기록 오류: {e}")
-                                    st.code(traceback.format_exc())
+                                    show_attendance_write_error('퇴근', e)
                     
                     if st.session_state.get('show_early_leave_dialog'):
                         show_early_leave_dialog(name, user_lat, user_lon, distance)
