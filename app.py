@@ -6,22 +6,61 @@ from google.oauth2.service_account import Credentials
 from geopy.distance import geodesic
 from streamlit_js_eval import get_geolocation
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from threading import Lock
 import pytz
 from modules import *
-from attendance_rules import (
-    AUTO_TYPES,
-    UNAUTHORIZED_ABSENT,
-    UNAUTHORIZED_LATE,
-    UNAUTHORIZED_OUT,
-    has_real_attendance,
-    is_workday,
-    unauthorized_status_for,
-    work_dates_to_close,
-)
+import attendance_rules as _attendance_rules
 from io import BytesIO
 from openpyxl.styles import Alignment, Border, Side, PatternFill
+
+AUTO_TYPES = _attendance_rules.AUTO_TYPES
+UNAUTHORIZED_ABSENT = _attendance_rules.UNAUTHORIZED_ABSENT
+UNAUTHORIZED_LATE = _attendance_rules.UNAUTHORIZED_LATE
+UNAUTHORIZED_OUT = _attendance_rules.UNAUTHORIZED_OUT
+unauthorized_status_for = _attendance_rules.unauthorized_status_for
+
+if hasattr(_attendance_rules, 'is_workday') and hasattr(
+    _attendance_rules, 'has_real_attendance'
+):
+    is_workday = _attendance_rules.is_workday
+    has_real_attendance = _attendance_rules.has_real_attendance
+    work_dates_to_close = _attendance_rules.work_dates_to_close
+else:
+    # Compatibility for a Streamlit hot reload that temporarily retains the
+    # previous attendance_rules module while app.py has already been updated.
+    _PUBLIC_HOLIDAYS_2026 = frozenset((
+        date(2026, 1, 1),
+        date(2026, 2, 16), date(2026, 2, 17), date(2026, 2, 18),
+        date(2026, 3, 2),
+        date(2026, 5, 5), date(2026, 5, 25),
+        date(2026, 6, 3),
+        date(2026, 8, 17),
+        date(2026, 9, 24), date(2026, 9, 25),
+        date(2026, 10, 5), date(2026, 10, 9),
+        date(2026, 12, 25),
+    ))
+    _REAL_ATTENDANCE_TYPES = frozenset(
+        ('\ucd9c\uadfc', '\uc9c0\uac01', '\ud1f4\uadfc', '\uc870\ud1f4', '\uacb0\uadfc')
+    )
+
+    def is_workday(day):
+        return day.weekday() < 5 and day not in _PUBLIC_HOLIDAYS_2026
+
+    def has_real_attendance(record_types):
+        return bool(set(record_types).intersection(_REAL_ATTENDANCE_TYPES))
+
+    def work_dates_to_close(now_kst):
+        last_closed_date = now_kst.date() - timedelta(days=1)
+        if is_workday(now_kst.date()) and (now_kst.hour, now_kst.minute) >= (23, 59):
+            last_closed_date = now_kst.date()
+        current = now_kst.date().replace(day=1)
+        dates = []
+        while current <= last_closed_date:
+            if is_workday(current):
+                dates.append(current)
+            current += timedelta(days=1)
+        return dates
 
 LAB_LAT = 37.456461 
 LAB_LON = 126.952096 
